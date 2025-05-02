@@ -5,56 +5,34 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap
 
-# Streamlit configuration
+# Streamlit config
 st.set_page_config(layout="wide")
 st.title("🌍 Live Satellite Tracker")
-st.markdown("Track the ISS, NOAA 15, TIANMU-1 14, METEOR-M 2 4")
+st.markdown("Track the ISS, NOAA 15, TIANMU-1 14, METEOR satellites")
 
-# Customizable location input
+# Input location
 col1, col2 = st.columns(2)
 with col1:
     my_lat = st.number_input("Your Latitude", value=16.8409)
 with col2:
     my_lon = st.number_input("Your Longitude", value=96.1735)
 
-# --- Fetch TLE Data Functions ---
+# Reusable function to get TLE for a named satellite
 @st.cache_data(ttl=3600)
-def get_tle_iss():
-    url = "https://celestrak.org/NORAD/elements/stations.txt"
+def get_tle(name, url):
     lines = requests.get(url).text.strip().split("\n")
     for i in range(0, len(lines), 3):
-        if "ISS (ZARYA)" in lines[i]:
+        if name in lines[i]:
             return lines[i], lines[i+1], lines[i+2]
-    raise ValueError("ISS not found")
+    raise ValueError(f"{name} not found")
 
-@st.cache_data(ttl=3600)
-def get_tle_noaa():
-    url = "https://celestrak.org/NORAD/elements/weather.txt"
+# List all satellite names in a given TLE file
+def list_satellite_names(url):
     lines = requests.get(url).text.strip().split("\n")
-    for i in range(0, len(lines), 3):
-        if "NOAA 15" in lines[i]:
-            return lines[i], lines[i+1], lines[i+2]
-    raise ValueError("NOAA 15 not found")
+    names = [lines[i] for i in range(0, len(lines), 3)]
+    return names
 
-@st.cache_resource(ttl=3600)
-def get_tle_tianmu():
-    url = "https://celestrak.org/NORAD/elements/weather.txt"
-    lines = requests.get(url).text.strip().split("\n")
-    for i in range(0, len(lines), 3):
-        if "TIANMU-1 14" in lines[i]:
-            return lines[i], lines[i+1], lines[i+2]
-    raise ValueError("TIANMU-1 14 not found")
-
-@st.cache_resource(ttl=3600)
-def get_tle_meteor():
-    url = "https://celestrak.org/NORAD/elements/weather.txt"
-    lines = requests.get(url).text.strip().split("\n")
-    for i in range(0, len(lines), 3):
-        if "METEOR-M 2 4" in lines[i] or "METEOR-M2 4" in lines[i]:
-            return lines[i], lines[i+1], lines[i+2]
-    raise ValueError("METEOR-M2 4 not found")
-
-# --- Satellite data ---
+# Satellite data extraction
 def get_satellite_data(satellite, ts):
     time_now = ts.now()
     geocentric = satellite.at(time_now)
@@ -75,15 +53,14 @@ def get_satellite_data(satellite, ts):
 
     return lat, lon, alt, speed, lats, lons
 
-# --- Main ---
+# Main app
 def main():
     ts = load.timescale()
 
-    # Load all satellites
-    name_iss, tle1_iss, tle2_iss = get_tle_iss()
-    name_noaa, tle1_noaa, tle2_noaa = get_tle_noaa()
-    name_tianmu, tle1_tianmu, tle2_tianmu = get_tle_tianmu()
-    name_meteor, tle1_meteor, tle2_meteor = get_tle_meteor()
+    name_iss, tle1_iss, tle2_iss = get_tle("ISS (ZARYA)", "https://celestrak.org/NORAD/elements/stations.txt")
+    name_noaa, tle1_noaa, tle2_noaa = get_tle("NOAA 15", "https://celestrak.org/NORAD/elements/weather.txt")
+    name_tianmu, tle1_tianmu, tle2_tianmu = get_tle("TIANMU-1 14", "https://celestrak.org/NORAD/elements/weather.txt")
+    name_meteor, tle1_meteor, tle2_meteor = get_tle("METEOR", "https://celestrak.org/NORAD/elements/weather.txt")  # relaxed name
 
     sat_iss = EarthSatellite(tle1_iss, tle2_iss, name_iss, ts)
     sat_noaa = EarthSatellite(tle1_noaa, tle2_noaa, name_noaa, ts)
@@ -106,11 +83,9 @@ def main():
     m.drawparallels(np.arange(-90., 91., 30.))
     m.drawmeridians(np.arange(-180., 181., 60.))
 
-    # Plot your location
     x_my, y_my = m(my_lon, my_lat)
     ax.scatter(x_my, y_my, color='white', marker='^', s=100, label="Your Location")
 
-    # Plot satellites
     for item in satellites:
         sat = item["sat"]
         color = item["color"]
@@ -119,16 +94,14 @@ def main():
         ax.scatter(x, y, color=color, s=100, label=sat.name)
         path_x, path_y = m(path_lons, path_lats)
         ax.plot(path_x, path_y, linestyle='--', color=color)
-
-        # Display data below the plot
         st.markdown(f"**{sat.name}** — Lat: `{lat:.2f}°`, Lon: `{lon:.2f}°`, Alt: `{alt:.1f} km`, Speed: `{speed:.2f} km/s`")
 
     ax.legend(loc='lower left', fontsize=9)
     st.pyplot(fig)
 
-# Reload Button (Streamlit-style)
+# Reload button
 if st.button("🔁 Reload Satellite Data"):
     st.rerun()
 
-# Run app
+# Run the main function
 main()
